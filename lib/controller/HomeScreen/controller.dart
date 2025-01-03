@@ -1,16 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 
 class HomeScreenController extends GetxController {
+  final String googleApiKey = "Apikeybyaks";
   final Completer<GoogleMapController> _mapController =
       Completer<GoogleMapController>();
   final currentPosition = LatLng(0, 0).obs;
   final RxSet<Marker> markers = <Marker>{}.obs;
   final RxList<Marker> markerList = <Marker>[].obs;
+  final RxList<dynamic> predictions = <dynamic>[].obs;
 
   @override
   void onInit() {
@@ -61,6 +65,39 @@ class HomeScreenController extends GetxController {
     }
   }
 
+  Future<void> searchPlaces(String query) async {
+    final url =
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$query&key=$googleApiKey';
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      predictions.value = data['predictions'];
+    } else {
+      Get.snackbar('Error', 'Failed to fetch place predictions');
+    }
+  }
+
+  Future<void> handlePlaceSelection(String placeId) async {
+    final url =
+        'https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&key=$googleApiKey';
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final location = data['result']['geometry']['location'];
+      LatLng position = LatLng(location['lat'], location['lng']);
+      addMarker(position);
+
+      final GoogleMapController controller = await _mapController.future;
+      controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: position, zoom: 16.0),
+        ),
+      );
+    } else {
+      Get.snackbar('Error', 'Failed to fetch place details');
+    }
+  }
+
   /// Adds a marker at the tapped location and refreshes the map
   void addMarker(LatLng position) async {
     try {
@@ -102,7 +139,13 @@ class HomeScreenController extends GetxController {
   /// Clears all markers and refreshes the map
   void clearMarkers() {
     markers.clear();
+    predictions.clear();
+    markerList.clear();
     refreshMap();
+  }
+
+  void clearpredictions() {
+    predictions.clear();
   }
 
   /// Refreshes the map
